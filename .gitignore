@@ -11,3 +11,5 @@ __pycache__
 .gltest_cache
 .vscode
 .idea
+.vercel
+.env*

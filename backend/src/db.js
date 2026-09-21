@@ -93,21 +93,5 @@ export async function initDb() {
     );
   `;
 
-  // Seed default entities if table is empty
-  const existingEntities = await sql`SELECT COUNT(*) as count FROM entities`;
-  if (parseInt(existingEntities[0].count, 10) === 0) {
-    console.log("[Neon DB] Seeding initial Web3 entities for trust tracking...");
-    await sql`
-      INSERT INTO entities (entity_id, display_name, entity_type, trust_score, trust_grade, status, total_claims, accepted_positive, accepted_negative, is_exploit_flagged)
-      VALUES
-        ('euler_finance', 'Euler Finance', 'protocol', 35, 'CCC', 'HIGH_RISK', 1, 0, 1, TRUE),
-        ('aave_v3', 'Aave V3 Protocol', 'protocol', 95, 'AAA', 'EXEMPLARY', 2, 2, 0, FALSE),
-        ('curve_finance', 'Curve Finance', 'protocol', 55, 'BB', 'TRUSTED', 1, 1, 0, FALSE),
-        ('vitalik.eth', 'vitalik.eth', 'wallet', 98, 'AAA', 'EXEMPLARY', 1, 1, 0, FALSE),
-        ('eliza_autonome', 'ElizaOS Autonomous Agent', 'agent', 82, 'AA', 'TRUSTED', 1, 1, 0, FALSE)
-      ON CONFLICT (entity_id) DO NOTHING;
-    `;
-  }
-
-  console.log("[Neon DB] Tables and schema initialized successfully!");
+  console.log("[Neon DB] Tables and schema initialized successfully with zero mock data!");
 }

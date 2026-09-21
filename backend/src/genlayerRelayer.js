@@ -212,34 +212,31 @@ export async function submitClaimOnChain({
   const pollResult = await pollTxFinality(txHash);
   console.log(`[Relayer] Consensus result status: ${pollResult.status} (${pollResult.rawStatus})`);
 
-  // Fetch updated recent claims to get the newly minted claim record
-  const recent = await readRecentClaims(5);
-  let newlyCreated = recent.find((c) => c.entity === normEntity && c.claim_text === cleanClaim);
-
-  if (!newlyCreated && recent.length > 0) {
-    newlyCreated = recent[0];
+  if (pollResult.status === "failed") {
+    throw new Error(`GenLayer transaction rejected with status: ${pollResult.rawStatus}`);
+  }
+  if (pollResult.status === "timeout") {
+    throw new Error("Adjudication timed out waiting for validator consensus");
   }
 
-  // Fallback structure if network latency delays read
-  const claimRecord = newlyCreated || {
-    id: `claim_pending_${Date.now()}`,
-    entity: normEntity,
-    entity_type: cleanType,
-    claim_text: cleanClaim,
-    evidence_urls: evidence_urls,
-    claimant: DEPLOYER_ADDRESS,
-    bond_amount: bond,
-    category: cleanCat,
-    sentiment: cleanSent,
-    verdict: "ACCEPTED",
-    status: "ACCEPTED",
-    is_slashed: false,
-    confidence_score: 90,
-    consensus_summary: "Claim successfully recorded on-chain by validator consensus.",
-    key_findings: ["Verified via on-chain consensus"],
-    evidence_sources_checked: evidence_urls.length,
-    challenges: [],
-  };
+  // Read latest on-chain claim directly from contract
+  let claimRecord = null;
+  const stats = await readContractStats();
+  if (stats && stats.total_claims > 0) {
+    const candidate = await readContractClaim(`claim_${stats.total_claims}`);
+    if (candidate && candidate.id) {
+      claimRecord = candidate;
+    }
+  }
+
+  if (!claimRecord) {
+    const recent = await readRecentClaims(5);
+    claimRecord = recent.find((c) => c.entity === normEntity && c.claim_text === cleanClaim) || recent[0];
+  }
+
+  if (!claimRecord || !claimRecord.id) {
+    throw new Error("Claim was processed on-chain but could not be read from contract registry");
+  }
 
   // Sync to Neon DB
   try {

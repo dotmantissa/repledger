@@ -50,15 +50,15 @@ export function AdjudicationChamber({
   return (
     <div className="flex flex-col gap-5">
       {/* Header and Action Banner */}
-      <div className="bg-whisper-card dark:bg-obsidian-card border border-emerald-500/20 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-whisper-card border border-emerald-500/20 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <Scale className="w-5 h-5 text-emerald" />
-            <h2 className="text-base font-bold text-emerald-950 dark:text-emerald-50">
+            <h2 className="text-base font-bold text-emerald-950">
               Consensus Adjudication Spool
             </h2>
           </div>
-          <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1 max-w-xl leading-relaxed">
+          <p className="text-xs text-emerald-800/80 mt-1 max-w-xl leading-relaxed">
             Every entry is verified by GenLayer validators who fetch evidence
             and reach consensus before permanently appending to the ledger.
             False claims are slashed; truthful challenges are rewarded.
@@ -67,7 +67,7 @@ export function AdjudicationChamber({
 
         <button
           onClick={() => onOpenSubmitModal()}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald hover:bg-emerald-600 text-obsidian-base font-bold text-xs transition-colors shrink-0 shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald hover:bg-emerald-600 text-obsidian-base font-bold text-xs transition-colors shrink-0 shadow-xs"
         >
           <Coins className="w-4 h-4" />
           <span>Submit Claim with Bond</span>
@@ -83,7 +83,7 @@ export function AdjudicationChamber({
             className={`px-3 py-1.5 rounded-lg text-xs font-mono font-medium transition-colors whitespace-nowrap ${
               selectedCategory === cat.id
                 ? "bg-emerald text-obsidian-base font-bold shadow-xs"
-                : "bg-whisper-card dark:bg-obsidian-card text-emerald-800 dark:text-emerald-200 border border-emerald-500/15 hover:border-emerald-500/35"
+                : "bg-whisper-card text-emerald-900 border border-emerald-500/20 hover:border-emerald-500/40"
             }`}
           >
             {cat.label}
@@ -93,23 +93,23 @@ export function AdjudicationChamber({
 
       {/* Claims Feed */}
       {loading ? (
-        <div className="py-16 text-center text-xs font-mono text-emerald-700/60 dark:text-emerald-400/60 flex flex-col items-center gap-2">
+        <div className="py-16 text-center text-xs font-mono text-emerald-800/70 flex flex-col items-center gap-2">
           <div className="w-6 h-6 border-2 border-emerald border-t-transparent rounded-full animate-spin" />
           <span>Synchronizing consensus records from GenLayer Studio...</span>
         </div>
       ) : filteredClaims.length === 0 ? (
-        <div className="bg-whisper-card dark:bg-obsidian-card border border-emerald-500/20 rounded-xl p-12 text-center flex flex-col items-center gap-3">
+        <div className="bg-whisper-card border border-emerald-500/20 rounded-xl p-12 text-center flex flex-col items-center gap-3 shadow-sm">
           <FileSearch className="w-10 h-10 text-emerald-600/40" />
-          <h3 className="text-sm font-bold text-emerald-950 dark:text-emerald-50">
+          <h3 className="text-sm font-bold text-emerald-950">
             No claims recorded in this category yet
           </h3>
-          <p className="text-xs text-emerald-700/70 dark:text-emerald-400/70 max-w-md">
+          <p className="text-xs text-emerald-800/80 max-w-md">
             Be the first to stake a bond and submit a claim backed by public
             evidence URLs. If accepted, it will be written to the ledger forever.
           </p>
           <button
             onClick={() => onOpenSubmitModal()}
-            className="mt-2 px-3.5 py-1.5 rounded-lg bg-emerald hover:bg-emerald-600 text-obsidian-base font-semibold text-xs transition-colors"
+            className="mt-2 px-3.5 py-1.5 rounded-lg bg-emerald hover:bg-emerald-600 text-obsidian-base font-semibold text-xs transition-colors shadow-xs"
           >
             Submit First Claim
           </button>
@@ -125,55 +125,55 @@ export function AdjudicationChamber({
             return (
               <div
                 key={c.claim_id || c.id}
-                className="bg-whisper-card dark:bg-obsidian-card border border-emerald-500/20 rounded-xl overflow-hidden transition-all shadow-sm"
+                className="bg-whisper-card border border-emerald-500/20 rounded-xl overflow-hidden transition-all shadow-sm"
               >
                 {/* Structural Device: Consensus Verdict Stamp Top Ribbon */}
-                <div className="px-5 py-3 border-b border-emerald-500/15 bg-emerald-500/5 dark:bg-emerald-500/10 flex flex-wrap items-center justify-between gap-3">
+                <div className="px-5 py-3 border-b border-emerald-500/15 bg-emerald-500/5 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     {/* Visual Notary Stamp */}
                     <div
                       className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-extrabold uppercase tracking-wide border flex items-center gap-1.5 ${
                         isAccepted
-                          ? "bg-emerald/20 text-emerald border-emerald/40"
+                          ? "bg-emerald/20 text-emerald-900 border-emerald/40"
                           : isRejected
-                          ? "bg-red-500/20 text-red-400 border-red-500/40"
-                          : "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                          ? "bg-red-500/15 text-red-700 border-red-500/40"
+                          : "bg-blue-500/15 text-blue-700 border-blue-500/40"
                       }`}
                     >
                       {isAccepted ? (
                         <>
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
                           <span>RECORDED ON-CHAIN</span>
                         </>
                       ) : isRejected ? (
                         <>
-                          <XCircle className="w-3.5 h-3.5" />
+                          <XCircle className="w-3.5 h-3.5 text-red-600" />
                           <span>BOND SLASHED</span>
                         </>
                       ) : (
                         <>
-                          <Swords className="w-3.5 h-3.5" />
+                          <Swords className="w-3.5 h-3.5 text-blue-600" />
                           <span>CHALLENGE OVERRIDDEN</span>
                         </>
                       )}
                     </div>
 
-                    <span className="text-xs font-mono font-semibold text-emerald-900 dark:text-emerald-100">
+                    <span className="text-xs font-mono font-semibold text-emerald-950">
                       #{c.claim_id || c.id}
                     </span>
-                    <span className="text-xs font-mono text-emerald-700/60 dark:text-emerald-400/60">
+                    <span className="text-xs font-mono text-emerald-700/70">
                       • {c.entity}
                     </span>
                   </div>
 
                   <div className="flex items-center gap-3 text-xs font-mono">
-                    <div className="flex items-center gap-1 text-emerald-800 dark:text-emerald-200">
+                    <div className="flex items-center gap-1 text-emerald-900">
                       <Coins className="w-3.5 h-3.5 text-emerald" />
                       <span>{c.bond_amount} GEN Bond</span>
                     </div>
 
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald font-bold">
-                      <Sparkles className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-800 font-bold">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald" />
                       <span>{c.confidence_score}% Quorum</span>
                     </div>
                   </div>
@@ -183,10 +183,10 @@ export function AdjudicationChamber({
                 <div className="p-5 flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm font-medium text-emerald-950 dark:text-emerald-50 leading-relaxed font-sans">
+                      <p className="text-sm font-medium text-emerald-950 leading-relaxed font-sans">
                         "{c.claim_text}"
                       </p>
-                      <div className="flex items-center gap-2 mt-2 text-[11px] font-mono text-emerald-700/70 dark:text-emerald-400/70">
+                      <div className="flex items-center gap-2 mt-2 text-[11px] font-mono text-emerald-700/80">
                         <span className="capitalize">Category: {c.category}</span>
                         <span>•</span>
                         <span className="capitalize">
@@ -201,7 +201,7 @@ export function AdjudicationChamber({
                     {isAccepted && (
                       <button
                         onClick={() => onOpenChallengeModal(c)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 hover:border-amber-500/60 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 text-xs font-mono font-semibold transition-colors shrink-0"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 hover:border-amber-500/60 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 text-xs font-mono font-semibold transition-colors shrink-0"
                       >
                         <Swords className="w-3.5 h-3.5" />
                         <span>Challenge Claim</span>
@@ -211,8 +211,8 @@ export function AdjudicationChamber({
 
                   {/* Slashed Notice if Rejected */}
                   {isRejected && (
-                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-start gap-2">
-                      <XCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-700 flex items-start gap-2">
+                      <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold">Economic Penalty: </span>
                         Validators determined the evidence was unsubstantiated
@@ -224,8 +224,8 @@ export function AdjudicationChamber({
 
                   {/* Overridden Notice if Challenge Succeeded */}
                   {isOverridden && (
-                    <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400 flex items-start gap-2">
-                      <Swords className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-700 flex items-start gap-2">
+                      <Swords className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold">Challenge Upheld: </span>
                         A challenger submitted counter evidence overturning
@@ -239,7 +239,7 @@ export function AdjudicationChamber({
                   <div className="pt-2 border-t border-emerald-500/10 flex items-center justify-between">
                     <button
                       onClick={() => toggleExpand(c.claim_id || c.id)}
-                      className="flex items-center gap-1.5 text-xs font-mono text-emerald hover:underline"
+                      className="flex items-center gap-1.5 text-xs font-mono text-emerald-800 hover:underline"
                     >
                       <span>
                         {isExpanded
@@ -258,7 +258,7 @@ export function AdjudicationChamber({
                         href="https://genlayer-explorer.vercel.app"
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] font-mono text-emerald-700/60 dark:text-emerald-400/60 hover:text-emerald flex items-center gap-1"
+                        className="text-[11px] font-mono text-emerald-700/70 hover:text-emerald-900 flex items-center gap-1"
                       >
                         <span>Tx: {c.genlayer_tx_hash.slice(0, 8)}...</span>
                         <ExternalLink className="w-3 h-3" />
@@ -268,12 +268,12 @@ export function AdjudicationChamber({
 
                   {/* Expanded Accordion: Validator Consensus & Evidence Links */}
                   {isExpanded && (
-                    <div className="p-4 rounded-lg bg-whisper-base dark:bg-obsidian-base border border-emerald-500/15 flex flex-col gap-3 font-mono text-xs">
+                    <div className="p-4 rounded-lg bg-whisper-base border border-emerald-500/15 flex flex-col gap-3 font-mono text-xs">
                       <div>
-                        <span className="text-[10px] text-emerald-700/70 dark:text-emerald-400/70 uppercase">
+                        <span className="text-[10px] text-emerald-700/80 uppercase font-semibold">
                           Validator Consensus Summary
                         </span>
-                        <p className="text-xs text-emerald-950 dark:text-emerald-100 font-sans mt-0.5 leading-relaxed">
+                        <p className="text-xs text-emerald-950 font-sans mt-0.5 leading-relaxed">
                           {c.consensus_summary ||
                             "Consensus reached through multi-validator LLM execution."}
                         </p>
@@ -282,7 +282,7 @@ export function AdjudicationChamber({
                       {/* Evidence URLs */}
                       {c.evidence_urls && c.evidence_urls.length > 0 && (
                         <div>
-                          <span className="text-[10px] text-emerald-700/70 dark:text-emerald-400/70 uppercase">
+                          <span className="text-[10px] text-emerald-700/80 uppercase font-semibold">
                             Submitted Evidence Sources
                           </span>
                           <div className="flex flex-col gap-1 mt-1">
@@ -292,7 +292,7 @@ export function AdjudicationChamber({
                                 href={url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="flex items-center gap-1.5 text-emerald hover:underline truncate"
+                                className="flex items-center gap-1.5 text-emerald-800 hover:underline truncate"
                               >
                                 <ExternalLink className="w-3 h-3 shrink-0" />
                                 <span className="truncate">{url}</span>
@@ -305,10 +305,10 @@ export function AdjudicationChamber({
                       {/* Key Findings */}
                       {c.key_findings && c.key_findings.length > 0 && (
                         <div>
-                          <span className="text-[10px] text-emerald-700/70 dark:text-emerald-400/70 uppercase">
+                          <span className="text-[10px] text-emerald-700/80 uppercase font-semibold">
                             Consensus Key Findings
                           </span>
-                          <ul className="list-disc list-inside mt-1 flex flex-col gap-0.5 text-emerald-900 dark:text-emerald-200 font-sans text-xs">
+                          <ul className="list-disc list-inside mt-1 flex flex-col gap-0.5 text-emerald-950 font-sans text-xs">
                             {c.key_findings.map((f, i) => (
                               <li key={i}>{f}</li>
                             ))}
@@ -319,22 +319,22 @@ export function AdjudicationChamber({
                       {/* Challenge History */}
                       {c.challenges && c.challenges.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-emerald-500/15">
-                          <span className="text-[10px] text-amber-500 uppercase font-bold">
+                          <span className="text-[10px] text-amber-700 uppercase font-bold">
                             Challenge Adjudication History
                           </span>
                           {c.challenges.map((chal, i) => (
                             <div
                               key={i}
-                              className="mt-1.5 p-2 rounded bg-amber-500/5 border border-amber-500/20 text-xs font-sans"
+                              className="mt-1.5 p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs font-sans"
                             >
-                              <p className="text-amber-500 font-mono font-bold text-[11px]">
+                              <p className="text-amber-800 font-mono font-bold text-[11px]">
                                 Verdict: {chal.verdict} • Counter Bond: {chal.counter_bond} GEN
                               </p>
-                              <p className="text-emerald-950 dark:text-emerald-100 mt-1">
+                              <p className="text-emerald-950 mt-1">
                                 Rebuttal: "{chal.rebuttal}"
                               </p>
                               {chal.reasoning && (
-                                <p className="text-emerald-700/80 dark:text-emerald-300/80 text-[11px] mt-1 font-mono">
+                                <p className="text-emerald-800/80 text-[11px] mt-1 font-mono">
                                   Validator Rationale: {chal.reasoning}
                                 </p>
                               )}

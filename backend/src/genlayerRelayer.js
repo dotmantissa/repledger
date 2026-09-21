@@ -12,16 +12,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const RPC_URL = process.env.GENLAYER_RPC_URL || "https://studio.genlayer.com/api";
-const DEPLOYER_ADDRESS =
+export const DEPLOYER_ADDRESS =
   process.env.DEPLOYER_ADDRESS || "0xBC1399c55538eC034d4Da550C03c34Ae0C357f53";
 const DEPLOYER_PRIVATE_KEY =
   process.env.DEPLOYER_PRIVATE_KEY ||
   "0xd4479070c2a31da31a01e732ca51707132bacdb480aae432a0c8bd0b91eba4b7";
 export const CONTRACT_ADDRESS =
   process.env.CONTRACT_ADDRESS || "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661";
-
-const POLL_INTERVAL_MS = 2500;
-const MAX_POLL_ATTEMPTS = 40;
 
 export async function rpcCall(method, params = []) {
   const res = await fetch(RPC_URL, {
@@ -67,37 +64,6 @@ export const genlayerClient = createClient({
   account: DEPLOYER_ADDRESS,
   provider: customProvider,
 });
-
-/**
- * Poll GenLayer Studio for transaction finality
- */
-export async function pollTxFinality(txHash) {
-  for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    try {
-      const tx = await rpcCall("eth_getTransactionByHash", [txHash]);
-      if (!tx) continue;
-
-      const raw = tx.status;
-      let statusName = null;
-      if (typeof raw === "string") {
-        statusName = raw === "ACTIVATED" ? "PENDING" : raw;
-      } else if (typeof raw === "number") {
-        statusName = transactionsStatusNumberToName[String(raw)] || null;
-      }
-
-      if (["FINALIZED", "ACCEPTED"].includes(statusName)) {
-        return { status: "finalized", rawStatus: statusName, tx };
-      }
-      if (statusName === "CANCELED") {
-        return { status: "failed", rawStatus: statusName, tx };
-      }
-    } catch {
-      // transient network hiccup, retry
-    }
-  }
-  return { status: "timeout", rawStatus: "TIMEOUT" };
-}
 
 /**
  * Read latest ledger stats directly from on-chain contract
@@ -168,7 +134,7 @@ export async function readRecentClaims(limit = 20) {
 }
 
 /**
- * Submit a new claim to the GenLayer contract with abstracted transaction
+ * Submit a new claim on-chain asynchronously (returns txHash immediately within 2s)
  */
 export async function submitClaimOnChain({
   entity,
@@ -188,7 +154,7 @@ export async function submitClaimOnChain({
   const urlsJson = JSON.stringify(evidence_urls);
   const bond = parseInt(bond_amount, 10) || 10;
 
-  console.log(`[Relayer] Submitting claim for entity: ${normEntity}, bond: ${bond} GEN...`);
+  console.log(`[Relayer] Broadcasting submit_claim for entity: ${normEntity}, bond: ${bond} GEN...`);
 
   // Broadcast write transaction
   const txHash = await genlayerClient.writeContract({
@@ -206,39 +172,10 @@ export async function submitClaimOnChain({
     value: BigInt(0),
   });
 
-  console.log(`[Relayer] Transaction broadcast: ${txHash}. Awaiting validator consensus...`);
+  console.log(`[Relayer] Transaction broadcast successfully: ${txHash}`);
 
-  // Poll for finality
-  const pollResult = await pollTxFinality(txHash);
-  console.log(`[Relayer] Consensus result status: ${pollResult.status} (${pollResult.rawStatus})`);
-
-  if (pollResult.status === "failed") {
-    throw new Error(`GenLayer transaction rejected with status: ${pollResult.rawStatus}`);
-  }
-  if (pollResult.status === "timeout") {
-    throw new Error("Adjudication timed out waiting for validator consensus");
-  }
-
-  // Read latest on-chain claim directly from contract
-  let claimRecord = null;
-  const stats = await readContractStats();
-  if (stats && stats.total_claims > 0) {
-    const candidate = await readContractClaim(`claim_${stats.total_claims}`);
-    if (candidate && candidate.id) {
-      claimRecord = candidate;
-    }
-  }
-
-  if (!claimRecord) {
-    const recent = await readRecentClaims(5);
-    claimRecord = recent.find((c) => c.entity === normEntity && c.claim_text === cleanClaim) || recent[0];
-  }
-
-  if (!claimRecord || !claimRecord.id) {
-    throw new Error("Claim was processed on-chain but could not be read from contract registry");
-  }
-
-  // Sync to Neon DB
+  // Create provisional pending record in Neon DB
+  const tempId = `claim_pending_${txHash.slice(2, 10)}`;
   try {
     await sql`
       INSERT INTO claims (
@@ -247,7 +184,7 @@ export async function submitClaimOnChain({
         consensus_summary, key_findings, evidence_sources_checked, challenges, genlayer_tx_hash,
         onchain_finalized, created_at, updated_at
       ) VALUES (
-        ${claimRecord.id},
+        ${tempId},
         ${normEntity},
         ${cleanType},
         ${cleanClaim},
@@ -257,16 +194,113 @@ export async function submitClaimOnChain({
         ${bond},
         ${cleanCat},
         ${cleanSent},
+        'PENDING',
+        'PENDING',
+        FALSE,
+        0,
+        'Validators independently fetching evidence and voting...',
+        '[]'::jsonb,
+        ${evidence_urls.length},
+        '[]'::jsonb,
+        ${txHash},
+        FALSE,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (claim_id) DO NOTHING;
+    `;
+  } catch (dbErr) {
+    console.warn("[Relayer] Provisional claim insert warning:", dbErr.message);
+  }
+
+  return {
+    success: true,
+    txHash,
+    status: "PENDING",
+    tempId,
+    message: "Transaction broadcast to GenLayer Studio Network. Awaiting validator consensus.",
+  };
+}
+
+/**
+ * Poll transaction status on GenLayer and finalize claim in DB when consensus completes
+ */
+export async function checkClaimStatusOnChain(txHash) {
+  try {
+    const tx = await rpcCall("eth_getTransactionByHash", [txHash]);
+    if (!tx) {
+      return { finalized: false, status: "PENDING", rawStatus: "PENDING", txHash };
+    }
+
+    const raw = tx.status;
+    let statusName = "PENDING";
+    if (typeof raw === "string") {
+      statusName = raw === "ACTIVATED" ? "PENDING" : raw;
+    } else if (typeof raw === "number") {
+      statusName = transactionsStatusNumberToName[String(raw)] || "PENDING";
+    }
+
+    if (!["FINALIZED", "ACCEPTED", "CANCELED"].includes(statusName)) {
+      return { finalized: false, status: "PENDING", rawStatus: statusName, txHash };
+    }
+
+    if (statusName === "CANCELED") {
+      await sql`
+        UPDATE claims SET status = 'FAILED', verdict = 'FAILED', updated_at = NOW()
+        WHERE genlayer_tx_hash = ${txHash};
+      `;
+      return { finalized: true, status: "FAILED", rawStatus: "CANCELED", error: "Consensus transaction canceled on-chain" };
+    }
+
+    // Transaction is finalized/accepted on-chain! Read real record from contract.
+    const stats = await readContractStats();
+    let claimRecord = null;
+
+    if (stats && stats.total_claims > 0) {
+      // Check candidate claim
+      const candidate = await readContractClaim(`claim_${stats.total_claims}`);
+      if (candidate && candidate.id) {
+        claimRecord = candidate;
+      }
+    }
+
+    if (!claimRecord) {
+      const recent = await readRecentClaims(5);
+      claimRecord = recent[0] || null;
+    }
+
+    if (!claimRecord || !claimRecord.id) {
+      return { finalized: false, status: "INDEXING", rawStatus: statusName, message: "Transaction confirmed, reading consensus result..." };
+    }
+
+    // Finalize claim in Neon DB
+    await sql`
+      INSERT INTO claims (
+        claim_id, entity, entity_type, claim_text, evidence_urls, claimant, claimant_email,
+        bond_amount, category, sentiment, verdict, status, is_slashed, confidence_score,
+        consensus_summary, key_findings, evidence_sources_checked, challenges, genlayer_tx_hash,
+        onchain_finalized, created_at, updated_at
+      ) VALUES (
+        ${claimRecord.id},
+        ${claimRecord.entity},
+        ${claimRecord.entity_type || "protocol"},
+        ${claimRecord.claim_text},
+        ${JSON.stringify(claimRecord.evidence_urls || [])}::jsonb,
+        ${claimRecord.claimant || DEPLOYER_ADDRESS},
+        'verified_claimant',
+        ${claimRecord.bond_amount || 10},
+        ${claimRecord.category || "exploit"},
+        ${claimRecord.sentiment || "negative"},
         ${claimRecord.verdict || "ACCEPTED"},
         ${claimRecord.status || "ACCEPTED"},
         ${Boolean(claimRecord.is_slashed)},
-        ${claimRecord.confidence_score || 85},
+        ${claimRecord.confidence_score || 90},
         ${claimRecord.consensus_summary || ""},
         ${JSON.stringify(claimRecord.key_findings || [])}::jsonb,
-        ${claimRecord.evidence_sources_checked || evidence_urls.length},
+        ${claimRecord.evidence_sources_checked || 1},
         ${JSON.stringify(claimRecord.challenges || [])}::jsonb,
         ${txHash},
-        ${pollResult.status === "finalized"},
+        TRUE,
         NOW(),
         NOW()
       )
@@ -277,26 +311,35 @@ export async function submitClaimOnChain({
         confidence_score = EXCLUDED.confidence_score,
         consensus_summary = EXCLUDED.consensus_summary,
         key_findings = EXCLUDED.key_findings,
-        onchain_finalized = EXCLUDED.onchain_finalized,
+        onchain_finalized = TRUE,
+        genlayer_tx_hash = EXCLUDED.genlayer_tx_hash,
         updated_at = NOW();
     `;
 
-    // Sync entity trust profile in Neon DB
-    await syncEntityInDb(normEntity);
-  } catch (dbErr) {
-    console.warn("[Neon DB] Sync claim warning:", dbErr.message);
-  }
+    // Remove provisional record if different ID
+    await sql`
+      DELETE FROM claims
+      WHERE genlayer_tx_hash = ${txHash} AND claim_id LIKE 'claim_pending_%' AND claim_id != ${claimRecord.id};
+    `;
 
-  return {
-    success: true,
-    txHash,
-    consensusStatus: pollResult.rawStatus,
-    claim: claimRecord,
-  };
+    // Sync entity trust score
+    await syncEntityInDb(claimRecord.entity);
+
+    return {
+      finalized: true,
+      status: claimRecord.status,
+      verdict: claimRecord.verdict,
+      consensusStatus: statusName,
+      claim: claimRecord,
+    };
+  } catch (err) {
+    console.error(`[Relayer] checkClaimStatus for ${txHash} error:`, err);
+    return { finalized: false, status: "ERROR", error: err.message };
+  }
 }
 
 /**
- * Challenge an existing claim on-chain
+ * Challenge an existing claim on-chain asynchronously
  */
 export async function challengeClaimOnChain({
   claim_id,
@@ -319,15 +362,45 @@ export async function challengeClaimOnChain({
     value: BigInt(0),
   });
 
-  console.log(`[Relayer] Challenge transaction broadcast: ${txHash}. Awaiting validator consensus...`);
+  console.log(`[Relayer] Challenge transaction broadcast: ${txHash}`);
 
-  const pollResult = await pollTxFinality(txHash);
+  return {
+    success: true,
+    txHash,
+    status: "PENDING",
+    claimId: cid,
+    message: "Challenge broadcast to GenLayer Network. Validators are evaluating counter-evidence.",
+  };
+}
 
-  // Read updated claim record from chain
-  const updatedClaim = await readContractClaim(cid);
-
-  // Sync to Neon DB
+/**
+ * Poll challenge status on-chain
+ */
+export async function checkChallengeStatusOnChain(txHash, claimId) {
   try {
+    const tx = await rpcCall("eth_getTransactionByHash", [txHash]);
+    if (!tx) {
+      return { finalized: false, status: "PENDING", txHash };
+    }
+
+    const raw = tx.status;
+    let statusName = "PENDING";
+    if (typeof raw === "string") {
+      statusName = raw === "ACTIVATED" ? "PENDING" : raw;
+    } else if (typeof raw === "number") {
+      statusName = transactionsStatusNumberToName[String(raw)] || "PENDING";
+    }
+
+    if (!["FINALIZED", "ACCEPTED", "CANCELED"].includes(statusName)) {
+      return { finalized: false, status: "PENDING", rawStatus: statusName, txHash };
+    }
+
+    if (statusName === "CANCELED") {
+      return { finalized: true, status: "FAILED", error: "Challenge transaction rejected on-chain" };
+    }
+
+    // Read updated claim record from chain
+    const updatedClaim = await readContractClaim(claimId);
     if (updatedClaim && updatedClaim.id) {
       await sql`
         UPDATE claims SET
@@ -335,23 +408,73 @@ export async function challengeClaimOnChain({
           verdict = ${updatedClaim.verdict},
           challenges = ${JSON.stringify(updatedClaim.challenges || [])}::jsonb,
           updated_at = NOW()
-        WHERE claim_id = ${cid};
+        WHERE claim_id = ${claimId};
       `;
 
       if (updatedClaim.entity) {
         await syncEntityInDb(updatedClaim.entity);
       }
     }
-  } catch (dbErr) {
-    console.warn("[Neon DB] Sync challenge warning:", dbErr.message);
+
+    return {
+      finalized: true,
+      status: updatedClaim?.status || "ACCEPTED",
+      updatedClaim,
+      consensusStatus: statusName,
+    };
+  } catch (err) {
+    console.error(`[Relayer] checkChallengeStatus error:`, err);
+    return { finalized: false, status: "ERROR", error: err.message };
   }
+}
+
+/**
+ * Faucet: Drip testnet GEN tokens to user account and embedded wallet
+ */
+export async function dripFaucet({ email, address, amount = 100 }) {
+  const userEmail = String(email || "guest@repledger.io").trim().toLowerCase();
+  const walletAddr = String(address || "").trim();
+  const dripAmt = Math.max(10, Math.min(amount, 250));
+
+  console.log(`[Faucet] Dripping ${dripAmt} GEN to ${userEmail} (${walletAddr || "no-wallet"})...`);
+
+  const updated = await sql`
+    INSERT INTO users (email, wallet_address, gen_balance, last_faucet_at)
+    VALUES (${userEmail}, ${walletAddr}, ${dripAmt}, NOW())
+    ON CONFLICT (email) DO UPDATE SET
+      gen_balance = users.gen_balance + ${dripAmt},
+      wallet_address = COALESCE(NULLIF(${walletAddr}, ''), users.wallet_address),
+      last_faucet_at = NOW(),
+      last_active = NOW()
+    RETURNING gen_balance, wallet_address;
+  `;
 
   return {
     success: true,
-    txHash,
-    consensusStatus: pollResult.rawStatus,
-    updatedClaim,
+    amount: dripAmt,
+    balance: updated[0]?.gen_balance || dripAmt,
+    address: updated[0]?.wallet_address || walletAddr,
+    message: `Successfully dripped ${dripAmt} GEN testnet tokens!`,
   };
+}
+
+/**
+ * Retrieve user testnet GEN stake balance
+ */
+export async function getUserBalance(email) {
+  const userEmail = String(email || "").trim().toLowerCase();
+  if (!userEmail) return { balance: 100, address: null };
+
+  const rows = await sql`
+    SELECT gen_balance, wallet_address FROM users WHERE email = ${userEmail} LIMIT 1
+  `;
+  if (rows.length > 0) {
+    return {
+      balance: rows[0].gen_balance || 100,
+      address: rows[0].wallet_address || null,
+    };
+  }
+  return { balance: 100, address: null };
 }
 
 /**
@@ -375,7 +498,7 @@ export async function syncEntityInDb(entityId) {
     ) VALUES (
       ${normEntity},
       ${displayName},
-      'contract',
+      'protocol',
       ${onChainScore.score || 50},
       ${onChainScore.grade || 'NEUTRAL'},
       ${onChainScore.status || 'UNASSESSED'},

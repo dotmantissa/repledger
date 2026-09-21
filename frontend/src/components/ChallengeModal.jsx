@@ -81,19 +81,54 @@ export function ChallengeModal({ isOpen, onClose, claim, onChallengeSubmitted })
         }),
       });
 
-      setStepMsg("Validators cross-examining rebuttal and evidence...");
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Server returned an invalid response");
+      }
 
-      const data = await res.json();
       if (!res.ok || data.error) {
         throw new Error(data.error || "Challenge submission failed");
       }
 
-      setStepMsg("Consensus finalized. Updating on-chain ledger...");
-      setTimeout(() => {
-        setIsSubmitting(false);
-        onChallengeSubmitted(data.updatedClaim);
-        onClose();
-      }, 1200);
+      const txHash = data.txHash;
+      setStepMsg(`Challenge broadcast: ${txHash.slice(0, 10)}... Polling consensus...`);
+
+      // Poll challenge status
+      let attempts = 0;
+      const pollTimer = setInterval(async () => {
+        attempts++;
+        try {
+          if (attempts === 2) {
+            setStepMsg("Validators cross-examining rebuttal against counter-evidence...");
+          } else if (attempts === 6) {
+            setStepMsg("Adjudicating bond award / slash conditions...");
+          }
+
+          const pollRes = await fetch(`/api/challenges/status/${txHash}?claimId=${claim.claim_id || claim.id}`);
+          if (pollRes.ok) {
+            const statusData = await pollRes.json();
+            if (statusData.finalized) {
+              clearInterval(pollTimer);
+              if (statusData.status === "FAILED") {
+                setIsSubmitting(false);
+                setErrorMsg(statusData.error || "Challenge rejected on-chain.");
+              } else {
+                setStepMsg("Consensus finalized! Record updated on-chain.");
+                setTimeout(() => {
+                  setIsSubmitting(false);
+                  onChallengeSubmitted(statusData.updatedClaim);
+                  onClose();
+                }, 1400);
+              }
+            }
+          }
+        } catch (pollErr) {
+          console.warn("Challenge poll note:", pollErr.message);
+        }
+      }, 2500);
     } catch (err) {
       console.error("Challenge error:", err);
       setErrorMsg(err.message || "Failed to challenge claim.");
@@ -244,7 +279,7 @@ export function ChallengeModal({ isOpen, onClose, claim, onChallengeSubmitted })
                 {stepMsg}
               </p>
               <span className="text-[11px] text-emerald-800/80">
-                Gasless challenge adjudication. Please do not close.
+                Gasless challenge adjudication. Please keep this window open.
               </span>
             </div>
           ) : (

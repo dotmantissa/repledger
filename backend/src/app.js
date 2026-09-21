@@ -8,7 +8,11 @@ import {
   readContractClaim,
   readRecentClaims,
   submitClaimOnChain,
+  checkClaimStatusOnChain,
   challengeClaimOnChain,
+  checkChallengeStatusOnChain,
+  dripFaucet,
+  getUserBalance,
   CONTRACT_ADDRESS,
 } from "./genlayerRelayer.js";
 
@@ -283,5 +287,53 @@ app.post("/api/claims/:id/challenge", authenticatePrivy, async (req, res) => {
   } catch (err) {
     console.error(`[API] /api/claims/${req.params.id}/challenge error:`, err);
     res.status(500).json({ error: err.message || "Failed to challenge claim" });
+  }
+});
+
+app.get("/api/claims/status/:txHash", async (req, res) => {
+  try {
+    const { txHash } = req.params;
+    const status = await checkClaimStatusOnChain(txHash);
+    res.json(status);
+  } catch (err) {
+    console.error("[API] /api/claims/status error:", err);
+    res.status(500).json({ error: "Failed to check claim status" });
+  }
+});
+
+app.get("/api/challenges/status/:txHash", async (req, res) => {
+  try {
+    const { txHash } = req.params;
+    const { claimId } = req.query;
+    const status = await checkChallengeStatusOnChain(txHash, claimId);
+    res.json(status);
+  } catch (err) {
+    console.error("[API] /api/challenges/status error:", err);
+    res.status(500).json({ error: "Failed to check challenge status" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Testnet Faucet for Embedded Wallets
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post("/api/faucet/drip", async (req, res) => {
+  try {
+    const { email, address, amount = 100 } = req.body;
+    const result = await dripFaucet({ email, address, amount });
+    res.json(result);
+  } catch (err) {
+    console.error("[API] /api/faucet/drip error:", err);
+    res.status(500).json({ error: "Faucet drip request failed" });
+  }
+});
+
+app.get("/api/faucet/balance/:email", async (req, res) => {
+  try {
+    const result = await getUserBalance(req.params.email);
+    res.json(result);
+  } catch (err) {
+    console.error("[API] /api/faucet/balance error:", err);
+    res.status(500).json({ balance: 100 });
   }
 });

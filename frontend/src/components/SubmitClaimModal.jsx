@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import {
   X,
@@ -10,6 +10,7 @@ import {
   Link as LinkIcon,
   CheckCircle2,
   AlertCircle,
+  Droplet,
 } from "lucide-react";
 
 export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmitted }) {
@@ -23,11 +24,56 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
   const [category, setCategory] = useState("exploit");
   const [sentiment, setSentiment] = useState("negative");
 
+  const [userGenBalance, setUserGenBalance] = useState(100);
+  const [isDripping, setIsDripping] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStep, setSubmissionStep] = useState("");
+  const [broadcastTxHash, setBroadcastTxHash] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
+  const email =
+    user?.email?.address ||
+    user?.google?.email ||
+    user?.apple?.email ||
+    "guest@repledger.io";
+
+  const embeddedAddress = user?.wallet?.address || "";
+
+  // Fetch user balance
+  useEffect(() => {
+    if (authenticated && email) {
+      fetch(`/api/faucet/balance/${encodeURIComponent(email)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && typeof data.balance === "number") {
+            setUserGenBalance(data.balance);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [authenticated, email, isOpen]);
+
   if (!isOpen) return null;
+
+  const handleDripFaucet = async () => {
+    setIsDripping(true);
+    try {
+      const res = await fetch("/api/faucet/drip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, address: embeddedAddress, amount: 50 }),
+      });
+      const data = await res.json();
+      if (data.balance) {
+        setUserGenBalance(data.balance);
+      }
+    } catch (err) {
+      console.error("Faucet drip error:", err);
+    } finally {
+      setIsDripping(false);
+    }
+  };
 
   const handleAddUrl = () => {
     if (evidenceUrls.length < 3) {
@@ -68,12 +114,6 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
     setSubmissionStep("Broadcasting transaction to GenLayer Studio Network...");
 
     try {
-      const email =
-        user?.email?.address ||
-        user?.google?.email ||
-        user?.apple?.email ||
-        "verified_member";
-
       const res = await fetch("/api/claims/submit", {
         method: "POST",
         headers: {
@@ -91,19 +131,61 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
         }),
       });
 
-      setSubmissionStep("Validators independently fetching evidence and voting...");
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Server returned an invalid response");
+      }
 
-      const data = await res.json();
       if (!res.ok || data.error) {
         throw new Error(data.error || "Claim submission failed");
       }
 
-      setSubmissionStep("Consensus reached. Appending to on-chain record...");
-      setTimeout(() => {
-        setIsSubmitting(false);
-        onClaimSubmitted(data.claim);
-        onClose();
-      }, 1000);
+      const txHash = data.txHash;
+      setBroadcastTxHash(txHash);
+      setSubmissionStep(`Transaction broadcast: ${txHash.slice(0, 10)}... Polling validator consensus...`);
+
+      // Decoupled status polling across consensus
+      let attempts = 0;
+      const pollTimer = setInterval(async () => {
+        attempts++;
+        try {
+          if (attempts === 2) {
+            setSubmissionStep("Validators independently fetching evidence URLs...");
+          } else if (attempts === 5) {
+            setSubmissionStep("LLM consensus evaluating factual evidence...");
+          } else if (attempts === 9) {
+            setSubmissionStep("Comparing multi-validator Equivalence Principle quorum...");
+          }
+
+          const pollRes = await fetch(`/api/claims/status/${txHash}`);
+          if (pollRes.ok) {
+            const statusData = await pollRes.json();
+            if (statusData.finalized) {
+              clearInterval(pollTimer);
+              if (statusData.status === "FAILED") {
+                setIsSubmitting(false);
+                setErrorMsg(statusData.error || "Transaction rejected by on-chain consensus.");
+              } else {
+                setSubmissionStep(
+                  `Consensus finalized: Verdict ${statusData.verdict}! Recorded on-chain.`
+                );
+                // Update local balance
+                setUserGenBalance((prev) => Math.max(0, prev - Number(bondAmount)));
+                setTimeout(() => {
+                  setIsSubmitting(false);
+                  onClaimSubmitted(statusData.claim);
+                  onClose();
+                }, 1400);
+              }
+            }
+          }
+        } catch (pollErr) {
+          console.warn("Status poll error:", pollErr.message);
+        }
+      }, 2500);
     } catch (err) {
       console.error("Submission error:", err);
       setErrorMsg(err.message || "Failed to submit claim to GenLayer.");
@@ -129,11 +211,34 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
             Submit Claim with Staked Bond
           </h2>
         </div>
-        <p className="text-xs text-emerald-800/80 mb-5 leading-relaxed">
-          Your claim will be analyzed by GenLayer consensus validators who read
-          the attached evidence. Staked bonds ensure only truthful claims are
+        <p className="text-xs text-emerald-800/80 mb-4 leading-relaxed">
+          Your claim will be analyzed by GenLayer consensus validators who fetch
+          and read the attached evidence. Staked bonds ensure only truthful claims are
           admitted. False claims are slashed.
         </p>
+
+        {/* Embedded Wallet Balance & Quick Faucet */}
+        <div className="mb-4 p-3 rounded-xl bg-whisper-base border border-emerald-500/20 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <Coins className="w-4 h-4 text-emerald" />
+            <span className="text-emerald-900 font-medium">
+              Available Stake Balance:
+            </span>
+            <span className="font-mono font-bold text-emerald-800">
+              {userGenBalance} GEN
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDripFaucet}
+            disabled={isDripping || isSubmitting}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-900 font-mono text-[11px] font-semibold transition-colors disabled:opacity-50"
+          >
+            <Droplet className="w-3 h-3 text-emerald" />
+            <span>{isDripping ? "Dripping..." : "Drip +50 GEN"}</span>
+          </button>
+        </div>
 
         {errorMsg && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-600 flex items-center gap-2">
@@ -151,7 +256,7 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
               </label>
               <input
                 type="text"
-                placeholder="e.g. balancer_v2, 0x123..., or eliza_agent"
+                placeholder="e.g. euler_finance, balancer_v2, or 0x123..."
                 value={entity}
                 onChange={(e) => setEntity(e.target.value)}
                 required
@@ -219,7 +324,7 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
             </label>
             <textarea
               rows={3}
-              placeholder="State the exact factual event. Example: 'Euler Finance was exploited for $197M via donateToReserves flash loan manipulation.'"
+              placeholder="State the exact factual event. Example: 'Euler Finance was exploited for approximately $197M on March 13, 2023 via donateToReserves flash loan manipulation.'"
               value={claimText}
               onChange={(e) => setClaimText(e.target.value)}
               required
@@ -307,8 +412,18 @@ export function SubmitClaimModal({ isOpen, onClose, initialEntity, onClaimSubmit
               <p className="text-xs font-mono font-medium text-emerald-900">
                 {submissionStep}
               </p>
-              <span className="text-[11px] text-emerald-800/80">
-                Gasless execution sponsored via relayer. Please do not close this window.
+              {broadcastTxHash && (
+                <a
+                  href="https://genlayer-explorer.vercel.app"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] font-mono text-emerald-800 hover:underline"
+                >
+                  Tx: {broadcastTxHash.slice(0, 10)}... (View on Explorer)
+                </a>
+              )}
+              <span className="text-[11px] text-emerald-800/70">
+                Gasless execution sponsored via relayer. Please keep this open.
               </span>
             </div>
           ) : (

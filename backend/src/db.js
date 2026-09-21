@@ -20,12 +20,15 @@ export const sql = neon(connectionString);
 export async function initDb() {
   console.log("[Neon DB] Establishing tables and indices for REP | Ledger...");
 
-  // Users table (email auth only)
+  // Users table (email auth & embedded wallet stake balance)
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       email VARCHAR(255) UNIQUE NOT NULL,
       privy_did VARCHAR(255),
+      wallet_address VARCHAR(255),
+      gen_balance INTEGER NOT NULL DEFAULT 100,
+      last_faucet_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       last_active TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );

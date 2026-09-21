@@ -1,0 +1,159 @@
+{
+  "ctor": {
+    "params": [],
+    "kwparams": {}
+  },
+  "methods": {
+    "challenge_claim": {
+      "params": [
+        [
+          "claim_id",
+          "string"
+        ],
+        [
+          "rebuttal_text",
+          "string"
+        ],
+        [
+          "counter_evidence_urls_json",
+          "string"
+        ],
+        [
+          "counter_bond",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "string",
+      "payable": false
+    },
+    "get_all_claim_ids": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": [
+        {
+          "$rep": "string"
+        }
+      ]
+    },
+    "get_all_entities": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": [
+        {
+          "$rep": "string"
+        }
+      ]
+    },
+    "get_claim": {
+      "params": [
+        [
+          "claim_id",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "string"
+    },
+    "get_entity_claims": {
+      "params": [
+        [
+          "entity",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "string"
+    },
+    "get_entity_score": {
+      "params": [
+        [
+          "entity",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "string"
+    },
+    "get_ledger_stats": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "string"
+    },
+    "get_owner": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "address"
+    },
+    "get_recent_claims": {
+      "params": [
+        [
+          "limit",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "string"
+    },
+    "is_flagged": {
+      "params": [
+        [
+          "entity",
+          "string"
+        ],
+        [
+          "flag_category",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "bool"
+    },
+    "submit_claim": {
+      "params": [
+        [
+          "entity",
+          "string"
+        ],
+        [
+          "entity_type",
+          "string"
+        ],
+        [
+          "claim_text",
+          "string"
+        ],
+        [
+          "evidence_urls_json",
+          "string"
+        ],
+        [
+          "bond_amount",
+          "int"
+        ],
+        [
+          "category",
+          "string"
+        ],
+        [
+          "sentiment",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "string",
+      "payable": false
+    }
+  }
+}

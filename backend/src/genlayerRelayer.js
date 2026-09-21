@@ -18,7 +18,7 @@ const DEPLOYER_PRIVATE_KEY =
   process.env.DEPLOYER_PRIVATE_KEY ||
   "0xd4479070c2a31da31a01e732ca51707132bacdb480aae432a0c8bd0b91eba4b7";
 export const CONTRACT_ADDRESS =
-  process.env.CONTRACT_ADDRESS || "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661";
+  process.env.CONTRACT_ADDRESS || "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847";
 
 export async function rpcCall(method, params = []) {
   const res = await fetch(RPC_URL, {

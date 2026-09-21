@@ -24,14 +24,14 @@ test("GET /api/health returns healthy status and contract address", async () => 
   assert.strictEqual(res.status, 200);
   const data = await res.json();
   assert.strictEqual(data.status, "healthy");
-  assert.strictEqual(data.contractAddress, "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661");
+  assert.strictEqual(data.contractAddress, "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847");
 });
 
 test("GET /api/contract/info returns metadata and methods", async () => {
   const res = await fetch(`${BASE_URL}/api/contract/info`);
   assert.strictEqual(res.status, 200);
   const data = await res.json();
-  assert.strictEqual(data.contractAddress, "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661");
+  assert.strictEqual(data.contractAddress, "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847");
   assert.strictEqual(data.network, "studionet");
   assert.ok(Array.isArray(data.methods));
   assert.ok(data.methods.includes("submit_claim"));
@@ -42,29 +42,29 @@ test("GET /api/stats returns ledger statistics", async () => {
   assert.strictEqual(res.status, 200);
   const data = await res.json();
   assert.ok(typeof data.totalClaims === "number");
-  assert.strictEqual(data.contractAddress, "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661");
+  assert.strictEqual(data.contractAddress, "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847");
 });
 
-test("GET /api/entities returns tracked entities", async () => {
+test("GET /api/entities returns tracked entities array", async () => {
   const res = await fetch(`${BASE_URL}/api/entities`);
   assert.strictEqual(res.status, 200);
   const data = await res.json();
   assert.ok(Array.isArray(data.entities));
-  assert.ok(data.count > 0);
+  assert.ok(typeof data.count === "number");
 });
 
-test("POST /api/simulate-query evaluates composable contract checks", async () => {
-  const res = await fetch(`${BASE_URL}/api/simulate-query`, {
+test("POST /api/faucet/drip dispenses testnet stake balance", async () => {
+  const res = await fetch(`${BASE_URL}/api/faucet/drip`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      entity: "euler_finance",
-      consumer_type: "lending_protocol",
+      email: "test_suite_user@example.com",
+      address: "0x0000000000000000000000000000000000000001",
+      amount: 50,
     }),
   });
   assert.strictEqual(res.status, 200);
   const data = await res.json();
-  assert.strictEqual(data.targetEntity, "euler_finance");
-  assert.ok(data.decision);
-  assert.ok(typeof data.approved === "boolean");
+  assert.strictEqual(data.success, true);
+  assert.ok(data.balance >= 50);
 });

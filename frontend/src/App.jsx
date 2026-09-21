@@ -24,7 +24,7 @@ export default function App() {
     totalOverridden: 0,
     totalSlashedBonds: 0,
     uniqueEntities: 0,
-    contractAddress: "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661",
+    contractAddress: "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847",
   });
 
   const [entities, setEntities] = useState([]);
@@ -99,10 +99,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col font-sans bg-whisper-base text-emerald-950">
-      <Navbar
-        contractAddress={stats.contractAddress}
-        stats={stats}
-      />
+      <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8">
         {/* Top Protocol Telemetry Header */}

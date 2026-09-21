@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <rect width="48" height="48" rx="12" fill="#0d4029"/>
+  <rect x="2" y="2" width="44" height="44" rx="10" stroke="#1ec677" stroke-width="1.5" stroke-opacity="0.35"/>
+  <!-- Ledger Block Spine -->
+  <path d="M12 12C12 10.8954 12.8954 10 14 10H32C34.2091 10 36 11.7909 36 14V34C36 36.2091 34.2091 38 32 38H14C12.8954 38 12 37.1046 12 36V12Z" fill="#133825" stroke="#1ec677" stroke-width="2"/>
+  <!-- Append-Only Record Lines -->
+  <line x1="17" y1="17" x2="27" y2="17" stroke="#1ec677" stroke-width="2.2" stroke-linecap="round"/>
+  <line x1="17" y1="23" x2="31" y2="23" stroke="#ecf9ee" stroke-width="2" stroke-linecap="round" stroke-opacity="0.85"/>
+  <line x1="17" y1="29" x2="25" y2="29" stroke="#ecf9ee" stroke-width="2" stroke-linecap="round" stroke-opacity="0.5"/>
+  <!-- Dynamic Verified Trust Seal -->
+  <circle cx="33" cy="31" r="7" fill="#1ec677"/>
+  <path d="M30 31L32 33L36 29" stroke="#0d4029" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

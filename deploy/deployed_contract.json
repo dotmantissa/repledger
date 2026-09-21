@@ -1,0 +1,11 @@
+{
+  "contractName": "RepLedger",
+  "contractAddress": "0x91582A31e53648a3E8ed3B8841dE0Fb640E5a661",
+  "deploymentTxHash": "0x54eaef28a85dad39643b83e69f0c5dfeeae72955b68528e4a8a994c7bb135c90",
+  "deployerAddress": "0xBC1399c55538eC034d4Da550C03c34Ae0C357f53",
+  "network": "studionet",
+  "chainId": "61999",
+  "rpcUrl": "https://studio.genlayer.com/api",
+  "explorerUrl": "https://genlayer-explorer.vercel.app",
+  "deployedAt": "2026-09-21T12:48:48Z"
+}

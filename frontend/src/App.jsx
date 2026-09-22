@@ -24,7 +24,7 @@ export default function App() {
     totalOverridden: 0,
     totalSlashedBonds: 0,
     uniqueEntities: 0,
-    contractAddress: "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847",
+    contractAddress: "0x6Bf2142a7AbA111e5BcD41Ad70Ebb4fC501660Ee",
   });
 
   const [entities, setEntities] = useState([]);
@@ -126,31 +126,40 @@ export default function App() {
             </div>
 
             {/* Quick Stat Counters */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full lg:w-auto">
-              <div className="p-3.5 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[120px]">
-                <p className="text-[11px] font-mono text-emerald-700/80">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full lg:w-auto">
+              <div className="p-3 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[105px]">
+                <p className="text-[10px] font-mono text-emerald-700/80">
                   Total Claims
                 </p>
-                <p className="text-xl font-mono font-extrabold text-emerald-950 mt-0.5">
+                <p className="text-lg font-mono font-extrabold text-emerald-950 mt-0.5">
                   {stats.totalClaims || claims.length}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[120px]">
-                <p className="text-[11px] font-mono text-emerald-700/80">
-                  Accepted on-chain
+              <div className="p-3 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[105px]">
+                <p className="text-[10px] font-mono text-emerald-700/80">
+                  Bond Custody
                 </p>
-                <p className="text-xl font-mono font-extrabold text-emerald-800 mt-0.5">
-                  {stats.totalAccepted || claims.filter((c) => c.status === "ACCEPTED").length}
+                <p className="text-lg font-mono font-extrabold text-emerald-800 mt-0.5">
+                  {stats.totalBondsInCustody || 0} GEN
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[120px] col-span-2 sm:col-span-1">
-                <p className="text-[11px] font-mono text-emerald-700/80">
+              <div className="p-3 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[105px]">
+                <p className="text-[10px] font-mono text-emerald-700/80">
                   Slashed Stakes
                 </p>
-                <p className="text-xl font-mono font-extrabold text-red-600 mt-0.5">
+                <p className="text-lg font-mono font-extrabold text-red-600 mt-0.5">
                   {stats.totalSlashedBonds || 0} GEN
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-whisper-base border border-emerald-500/15 text-center min-w-[105px]">
+                <p className="text-[10px] font-mono text-emerald-700/80">
+                  Challenger Payouts
+                </p>
+                <p className="text-lg font-mono font-extrabold text-blue-700 mt-0.5">
+                  {stats.totalChallengerPayouts || 0} GEN
                 </p>
               </div>
             </div>

@@ -12,8 +12,8 @@ Over time, this creates immutable institutional memory on-chain that prediction 
 
 The intelligent contract is deployed and verified on the GenLayer Studio Network:
 
-- Contract Address: `0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847`
-- Deployment Transaction: `0x893ecb5cf766540f36de248f712e66bd999c1aff39949ae1f73dbbfcb361e04f`
+- Contract Address: `0x6Bf2142a7AbA111e5BcD41Ad70Ebb4fC501660Ee`
+- Deployment Transaction: `0xa686e0e56ac860627e49a12f7f8ccf800142b09147e66478b06c48a52ccab92c`
 - Network: GenLayer Studio Network (studionet)
 - Chain ID: `61999`
 - Consensus Result: `MAJORITY_AGREE` (100% agreement across validators)

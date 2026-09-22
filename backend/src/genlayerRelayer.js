@@ -18,7 +18,7 @@ const DEPLOYER_PRIVATE_KEY =
   process.env.DEPLOYER_PRIVATE_KEY ||
   "0xd4479070c2a31da31a01e732ca51707132bacdb480aae432a0c8bd0b91eba4b7";
 export const CONTRACT_ADDRESS =
-  process.env.CONTRACT_ADDRESS || "0xe94A9eD3162b5c1b43f6F3FEF643E484b5B2a847";
+  process.env.CONTRACT_ADDRESS || "0x6Bf2142a7AbA111e5BcD41Ad70Ebb4fC501660Ee";
 
 export async function rpcCall(method, params = []) {
   const res = await fetch(RPC_URL, {
@@ -42,10 +42,22 @@ const customProvider = {
         "latest",
       ]);
       const chainId = await rpcCall("eth_chainId", []);
+
+      let hexValue = "0x0";
+      if (tx.value !== undefined && tx.value !== null) {
+        if (typeof tx.value === "bigint" || typeof tx.value === "number") {
+          hexValue = "0x" + BigInt(tx.value).toString(16);
+        } else if (typeof tx.value === "string") {
+          hexValue = tx.value.startsWith("0x")
+            ? tx.value
+            : "0x" + BigInt(tx.value).toString(16);
+        }
+      }
+
       const signed = await wallet.signTransaction({
         to: tx.to ?? null,
         data: tx.data,
-        value: tx.value ?? "0x0",
+        value: hexValue,
         gas: tx.gas ?? "0x4C4B40",
         gasPrice: tx.gasPrice ?? "0x0",
         nonce,
@@ -169,7 +181,7 @@ export async function submitClaimOnChain({
       cleanCat,
       cleanSent,
     ],
-    value: BigInt(0),
+    value: BigInt(bond),
   });
 
   console.log(`[Relayer] Transaction broadcast successfully: ${txHash}`);
@@ -359,7 +371,7 @@ export async function challengeClaimOnChain({
     address: CONTRACT_ADDRESS,
     functionName: "challenge_claim",
     args: [cid, cleanRebuttal, urlsJson, cbond],
-    value: BigInt(0),
+    value: BigInt(cbond),
   });
 
   console.log(`[Relayer] Challenge transaction broadcast: ${txHash}`);
@@ -370,6 +382,31 @@ export async function challengeClaimOnChain({
     status: "PENDING",
     claimId: cid,
     message: "Challenge broadcast to GenLayer Network. Validators are evaluating counter-evidence.",
+  };
+}
+
+/**
+ * Relay refund_bond write transaction to reclaim bonded stake
+ */
+export async function relayRefundBond({ claimId, claimantEmail = "anonymous" }) {
+  const cid = String(claimId).trim();
+  console.log(`[Relayer] Requesting bond refund for claim ${cid} (claimant: ${claimantEmail})...`);
+
+  const txHash = await genlayerClient.writeContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "refund_bond",
+    args: [cid],
+    value: BigInt(0),
+  });
+
+  console.log(`[Relayer] Refund transaction broadcast: ${txHash}`);
+
+  return {
+    success: true,
+    txHash,
+    status: "PENDING",
+    claimId: cid,
+    message: `Refund transaction broadcast for ${cid}. Bond will be refunded to claimant upon finalization.`,
   };
 }
 

@@ -11,6 +11,7 @@ import {
   checkClaimStatusOnChain,
   challengeClaimOnChain,
   checkChallengeStatusOnChain,
+  relayRefundBond,
   dripFaucet,
   getUserBalance,
   CONTRACT_ADDRESS,
@@ -46,7 +47,9 @@ app.get("/api/contract/info", async (req, res) => {
     methods: [
       "submit_claim",
       "challenge_claim",
+      "refund_bond",
       "get_claim",
+      "get_claim_bond",
       "get_entity_claims",
       "get_entity_score",
       "is_flagged",
@@ -54,6 +57,8 @@ app.get("/api/contract/info", async (req, res) => {
       "get_all_claim_ids",
       "get_all_entities",
       "get_recent_claims",
+      "set_treasury",
+      "get_treasury",
     ],
   });
 });
@@ -78,6 +83,10 @@ app.get("/api/stats", async (req, res) => {
       totalRejected: onchainStats?.total_rejected ?? 0,
       totalOverridden: onchainStats?.total_overridden ?? 0,
       totalSlashedBonds: onchainStats?.total_slashed_bonds ?? parseInt(slashedSum[0].total, 10),
+      totalBondsRefunded: onchainStats?.total_bonds_refunded ?? 0,
+      totalChallengerPayouts: onchainStats?.total_challenger_payouts ?? 0,
+      totalBondsInCustody: onchainStats?.total_bonds_in_custody ?? 0,
+      treasury: onchainStats?.treasury ?? "",
       uniqueEntities: onchainStats?.unique_entities_count ?? parseInt(dbEntitiesCount[0].count, 10),
       contractAddress: CONTRACT_ADDRESS,
     });
@@ -287,6 +296,18 @@ app.post("/api/claims/:id/challenge", authenticatePrivy, async (req, res) => {
   } catch (err) {
     console.error(`[API] /api/claims/${req.params.id}/challenge error:`, err);
     res.status(500).json({ error: err.message || "Failed to challenge claim" });
+  }
+});
+
+app.post("/api/claims/:id/refund", authenticatePrivy, async (req, res) => {
+  try {
+    const claimId = req.params.id;
+    const claimantEmail = req.user?.email || "anonymous";
+    const result = await relayRefundBond({ claimId, claimantEmail });
+    res.json(result);
+  } catch (err) {
+    console.error(`[API] /api/claims/${req.params.id}/refund error:`, err);
+    res.status(500).json({ error: err.message || "Failed to process bond refund" });
   }
 });
 

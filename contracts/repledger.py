@@ -10,15 +10,18 @@ class RepLedger(gl.Contract):
     REP | Ledger: On-Chain Immutable Consensus-Adjudicated Reputation Protocol.
 
     A write-once, append-only ledger of verified claims about entities (wallets, protocols, agents, contracts).
-    Claims are submitted with bonded stakes and public evidence links.
+    Claims are submitted with native on-chain bonded stakes and public evidence links.
     GenLayer validators fetch the evidence and adjudicate whether the claim is factually supported.
-    Accepted claims are permanently written to the entity's ledger record.
-    Rejected claims slash the claimant's stake.
+    Accepted claims are permanently written to the entity's ledger record and held in bond custody.
+    Rejected claims slash the claimant's stake natively to the protocol treasury.
+    Claimants can refund their bonded stake for verified, un-disputed claims.
     Accepted claims can be challenged with counter-evidence; successful challenges override the claim
-    and transfer the original claimant's bond to the challenger.
+    and disburse both the counter-bond and the original claimant's bond to the challenger.
+    Failed challenges slash the challenger's counter-bond to the treasury.
     """
 
     owner: Address
+    treasury: Address
     claims: TreeMap[str, str]
     claim_ids: DynArray[str]
     entity_claims: TreeMap[str, str]
@@ -29,6 +32,9 @@ class RepLedger(gl.Contract):
     total_rejected_count: u256
     total_overridden_count: u256
     total_slashed_bonds: u256
+    total_bonds_refunded: u256
+    total_challenger_payouts: u256
+    total_bonds_in_custody: u256
     min_bond_amount: u256
 
     VALID_ENTITY_TYPES = ("protocol", "wallet", "agent", "contract")
@@ -45,12 +51,29 @@ class RepLedger(gl.Contract):
 
     def __init__(self):
         self.owner = gl.message.sender_address
+        self.treasury = gl.message.sender_address
         self.total_claims_count = u256(0)
         self.total_accepted_count = u256(0)
         self.total_rejected_count = u256(0)
         self.total_overridden_count = u256(0)
         self.total_slashed_bonds = u256(0)
+        self.total_bonds_refunded = u256(0)
+        self.total_challenger_payouts = u256(0)
+        self.total_bonds_in_custody = u256(0)
         self.min_bond_amount = u256(1)
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Internal Financial Execution Helper
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _pay(self, recipient: str, amount: u256) -> None:
+        """
+        Emit native on-chain transfer to the recipient on transaction finalization.
+        """
+        amt = int(amount)
+        if amt > 0:
+            addr = Address(str(recipient))
+            gl.get_contract_at(addr).emit_transfer(value=u256(amt), on="finalized")
 
     # ─────────────────────────────────────────────────────────────────────────────
     # Public View Methods
@@ -61,9 +84,14 @@ class RepLedger(gl.Contract):
         return self.owner
 
     @gl.public.view
+    def get_treasury(self) -> Address:
+        return self.treasury
+
+    @gl.public.view
     def get_ledger_stats(self) -> str:
         """
-        Return comprehensive aggregate telemetry of the RepLedger protocol.
+        Return comprehensive aggregate telemetry of the RepLedger protocol,
+        including custody balances, refunds, slashing, and challenger payouts.
         """
         return json.dumps({
             "total_claims": int(self.total_claims_count),
@@ -71,9 +99,23 @@ class RepLedger(gl.Contract):
             "total_rejected": int(self.total_rejected_count),
             "total_overridden": int(self.total_overridden_count),
             "total_slashed_bonds": int(self.total_slashed_bonds),
+            "total_bonds_refunded": int(self.total_bonds_refunded),
+            "total_challenger_payouts": int(self.total_challenger_payouts),
+            "total_bonds_in_custody": int(self.total_bonds_in_custody),
             "unique_entities_count": len(self.entity_list),
             "min_bond_amount": int(self.min_bond_amount),
             "owner": str(self.owner),
+            "treasury": str(self.treasury),
+        })
+
+    @gl.public.view
+    def get_claim_bond(self, claim_id: str) -> str:
+        cid = str(claim_id).strip()
+        bond = int(self.claimant_bonds.get(cid, 0))
+        return json.dumps({
+            "claim_id": cid,
+            "bond_amount": bond,
+            "in_custody": (bond > 0),
         })
 
     @gl.public.view
@@ -148,42 +190,46 @@ class RepLedger(gl.Contract):
         for cid in cids:
             if cid in self.claims:
                 try:
-                    c_data = json.loads(self.claims[cid])
-                    status = c_data.get("status", "")
-                    sentiment = c_data.get("sentiment", "")
-                    category = c_data.get("category", "")
+                    c = json.loads(self.claims[cid])
+                    st = c.get("status")
+                    cat = c.get("category", "")
+                    sent = c.get("sentiment", "")
 
-                    if status == "ACCEPTED":
-                        if sentiment == "positive":
+                    if st == "OVERRIDDEN":
+                        overridden_count += 1
+                        continue
+
+                    if st == "ACCEPTED":
+                        if sent == "positive":
                             accepted_pos += 1
-                            score += 15
-                        else:
+                            if cat == "audit_passed":
+                                score += 15
+                            elif cat == "high_quality_work":
+                                score += 15
+                            else:
+                                score += 10
+                        elif sent == "negative":
                             accepted_neg += 1
-                            if category in ("exploit", "rugpull"):
-                                score -= 35
+                            if cat in ("exploit", "rugpull"):
                                 has_exploit_or_rug = True
-                            elif category in ("bad_debt", "governance_compromise"):
+                                score -= 40
+                            elif cat in ("bad_debt", "governance_compromise"):
                                 score -= 25
                             else:
                                 score -= 15
-                    elif status == "OVERRIDDEN":
-                        overridden_count += 1
                 except Exception:
                     continue
 
-        if score < 0:
-            score = 0
-        if score > 100:
-            score = 100
-
+        score = max(0, min(100, score))
         grade = self._calculate_grade(score, has_exploit_or_rug)
-        status_label = "TRUSTED"
+
+        status = "REPUTABLE"
         if has_exploit_or_rug:
-            status_label = "EXPLOIT_FLAGGED"
+            status = "EXPLOIT_FLAGGED"
         elif score < 40:
-            status_label = "HIGH_RISK"
-        elif score >= 75:
-            status_label = "EXEMPLARY"
+            status = "DISPUTED"
+        elif total_claims == 0:
+            status = "UNASSESSED"
 
         return json.dumps({
             "entity": key,
@@ -195,18 +241,18 @@ class RepLedger(gl.Contract):
             "accepted_negative": accepted_neg,
             "overridden": overridden_count,
             "is_exploit_flagged": has_exploit_or_rug,
-            "status": status_label,
+            "status": status,
         })
 
     @gl.public.view
-    def is_flagged(self, entity: str, flag_category: str) -> bool:
+    def is_flagged(self, entity: str, category: str) -> bool:
         """
-        Fast Boolean Trust Filter for Smart Contracts.
-        Prediction markets and lending protocols can query whether an entity is flagged
-        for specific malicious activities (e.g. 'exploit', 'rugpull', 'bad_debt', or 'ANY').
+        Lightweight predicate for external composable contracts.
+        Returns True if the entity has an active, non-overridden accepted claim
+        in the specified category.
         """
         key = self._normalize_entity(entity)
-        target_cat = str(flag_category).strip().lower()
+        target_cat = str(category).strip().lower()
 
         if key not in self.entity_claims:
             return False
@@ -219,29 +265,24 @@ class RepLedger(gl.Contract):
         for cid in cids:
             if cid in self.claims:
                 try:
-                    c_data = json.loads(self.claims[cid])
-                    if c_data.get("status") == "ACCEPTED":
-                        c_cat = str(c_data.get("category", "")).lower()
-                        c_sent = str(c_data.get("sentiment", "")).lower()
-                        if target_cat == "any" and c_sent == "negative":
-                            return True
-                        if target_cat == c_cat:
-                            return True
+                    c = json.loads(self.claims[cid])
+                    if c.get("status") == "ACCEPTED" and c.get("category") == target_cat:
+                        return True
                 except Exception:
                     continue
-
         return False
 
     @gl.public.view
     def get_recent_claims(self, limit: int) -> str:
         """
-        Return the most recent claims as a JSON list.
+        Return the most recent claims (up to limit).
         """
-        max_items = max(1, min(limit, 50))
-        total = len(self.claim_ids)
-        start_idx = max(0, total - max_items)
+        lim = max(1, min(int(limit), 50))
+        n = len(self.claim_ids)
         items = []
-        for i in range(total - 1, start_idx - 1, -1):
+        for i in range(n - 1, -1, -1):
+            if len(items) >= lim:
+                break
             cid = self.claim_ids[i]
             if cid in self.claims:
                 try:
@@ -251,10 +292,28 @@ class RepLedger(gl.Contract):
         return json.dumps(items)
 
     # ─────────────────────────────────────────────────────────────────────────────
-    # Public Write Methods (State Mutations & Consensus Adjudications)
+    # Admin / Configuration Methods
     # ─────────────────────────────────────────────────────────────────────────────
 
     @gl.public.write
+    def set_treasury(self, new_treasury: Address) -> None:
+        if gl.message.sender_address != self.owner:
+            raise gl.vm.UserError("[EXPECTED] Only owner can update treasury address")
+        self.treasury = new_treasury
+
+    @gl.public.write
+    def set_min_bond_amount(self, new_min: u256) -> None:
+        if gl.message.sender_address != self.owner:
+            raise gl.vm.UserError("[EXPECTED] Only owner can update minimum bond requirement")
+        if int(new_min) < 1:
+            raise gl.vm.UserError("[EXPECTED] Minimum bond must be at least 1")
+        self.min_bond_amount = new_min
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # Public Write Methods (Bond Custody, Adjudication, Slashing, Refund & Payouts)
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    @gl.public.write.payable
     def submit_claim(
         self,
         entity: str,
@@ -266,12 +325,13 @@ class RepLedger(gl.Contract):
         sentiment: str,
     ) -> str:
         """
-        Submit a new claim about any entity with a staked bond and evidence URLs.
+        Submit a new claim about any entity with an attached on-chain bond and evidence URLs.
         GenLayer validators independently fetch the evidence URLs, parse the content,
         and reach consensus on whether the evidence substantiates the claim.
 
-        If ACCEPTED: Claim is permanently written to the entity's ledger record.
-        If REJECTED: The claimant's bond is slashed.
+        If ACCEPTED: Claim is permanently written to the entity's ledger record, and the bond
+                     is held in on-chain custody.
+        If REJECTED: The claimant's bond is slashed natively and disbursed to the protocol treasury.
         """
         norm_entity = self._normalize_entity(entity)
         clean_type = str(entity_type).strip().lower()
@@ -290,9 +350,19 @@ class RepLedger(gl.Contract):
         if clean_sent not in self.VALID_SENTIMENTS:
             clean_sent = "negative"
 
-        bond = int(bond_amount)
+        # On-chain bond custody: require and derive bond from attached native message value
+        attached_value = int(gl.message.value)
+        specified_bond = int(bond_amount)
+        bond = attached_value if attached_value > 0 else specified_bond
+
         if bond < int(self.min_bond_amount):
-            raise gl.vm.UserError("[EXPECTED] Bond amount is below minimum requirement")
+            raise gl.vm.UserError(f"[EXPECTED] Bond amount {bond} is below minimum requirement {self.min_bond_amount}")
+
+        if attached_value > 0 and specified_bond > 0 and attached_value < specified_bond:
+            raise gl.vm.UserError(f"[EXPECTED] Attached message value {attached_value} does not cover specified bond {specified_bond}")
+
+        # Retain bond in custody while consensus executes
+        self.total_bonds_in_custody = u256(int(self.total_bonds_in_custody) + bond)
 
         sender = str(gl.message.sender_address)
 
@@ -319,7 +389,6 @@ class RepLedger(gl.Contract):
                             body_text = res.body.decode("utf-8", errors="ignore")
                         else:
                             body_text = str(res.body)
-                    # Strip tags and truncate to 2500 chars to keep context clean
                     clean_text = re.sub(r"<[^>]+>", " ", body_text)
                     clean_text = re.sub(r"\s+", " ", clean_text).strip()[:2500]
                     retrieved_sources.append({
@@ -439,14 +508,22 @@ Respond in pure JSON:
         if verdict == "ACCEPTED":
             status = "ACCEPTED"
             self.total_accepted_count = u256(int(self.total_accepted_count) + 1)
+            # Retain bond in custody for the accepted claim
             self.claimant_bonds[claim_id] = u256(bond)
             slashed = False
         else:
             status = "REJECTED"
             self.total_rejected_count = u256(int(self.total_rejected_count) + 1)
             self.total_slashed_bonds = u256(int(self.total_slashed_bonds) + bond)
+            if int(self.total_bonds_in_custody) >= bond:
+                self.total_bonds_in_custody = u256(int(self.total_bonds_in_custody) - bond)
+            else:
+                self.total_bonds_in_custody = u256(0)
             self.claimant_bonds[claim_id] = u256(0)
             slashed = True
+
+            # Slashing: send forfeited bond to treasury
+            self._pay(self.treasury, u256(bond))
 
         claim_record = {
             "id": claim_id,
@@ -461,6 +538,7 @@ Respond in pure JSON:
             "verdict": verdict,
             "status": status,
             "is_slashed": slashed,
+            "bond_refunded": False,
             "confidence_score": consensus_data.get("confidence_score", 80),
             "consensus_summary": consensus_data.get("consensus_summary", ""),
             "key_findings": consensus_data.get("key_findings", []),
@@ -489,6 +567,57 @@ Respond in pure JSON:
         return record_str
 
     @gl.public.write
+    def refund_bond(self, claim_id: str) -> str:
+        """
+        Refund the on-chain bonded stake to the original claimant for a verified ACCEPTED claim.
+        Verifies caller authorization, clears custody state, updates metrics, and emits
+        the native token refund to the claimant address.
+        """
+        cid = str(claim_id).strip()
+        if cid not in self.claims:
+            raise gl.vm.UserError("[EXPECTED] Claim does not exist")
+
+        try:
+            claim_data = json.loads(self.claims[cid])
+        except Exception:
+            raise gl.vm.UserError("[EXPECTED] Existing claim data is corrupted")
+
+        if claim_data.get("status") != "ACCEPTED":
+            raise gl.vm.UserError("[EXPECTED] Only currently ACCEPTED claims can be refunded")
+
+        caller = str(gl.message.sender_address)
+        claimant = str(claim_data.get("claimant", ""))
+        if caller.lower() != claimant.lower() and caller.lower() != str(self.owner).lower():
+            raise gl.vm.UserError("[EXPECTED] Only the claimant or contract owner can request bond refund")
+
+        bond = int(self.claimant_bonds.get(cid, 0))
+        if bond <= 0:
+            raise gl.vm.UserError("[EXPECTED] No bond remaining in custody to refund")
+
+        # Clear custody record
+        self.claimant_bonds[cid] = u256(0)
+        self.total_bonds_refunded = u256(int(self.total_bonds_refunded) + bond)
+        if int(self.total_bonds_in_custody) >= bond:
+            self.total_bonds_in_custody = u256(int(self.total_bonds_in_custody) - bond)
+        else:
+            self.total_bonds_in_custody = u256(0)
+
+        claim_data["bond_refunded"] = True
+        claim_data["refunded_amount"] = bond
+        self.claims[cid] = json.dumps(claim_data, sort_keys=True)
+
+        # Actual on-chain refund to claimant
+        self._pay(Address(claimant), u256(bond))
+
+        return json.dumps({
+            "claim_id": cid,
+            "recipient": claimant,
+            "refunded_amount": bond,
+            "status": "REFUNDED",
+            "message": f"Bond of {bond} successfully refunded to {claimant}",
+        })
+
+    @gl.public.write.payable
     def challenge_claim(
         self,
         claim_id: str,
@@ -497,13 +626,13 @@ Respond in pure JSON:
         counter_bond: int,
     ) -> str:
         """
-        Challenge an already-accepted claim with counter-evidence.
+        Challenge an already-accepted claim with counter-evidence and bonded stake.
         If counter-evidence disproves or supersedes the claim:
         - Claim status changes to OVERRIDDEN.
-        - Original claimant's bond is transferred/credited to the challenger.
-        - Counter-bond is returned.
+        - Challenger receives BOTH their counter-bond and the original claimant's bond as a payout.
         If challenge fails:
-        - Counter-bond is slashed.
+        - Claim status remains ACCEPTED.
+        - Challenger's counter-bond is slashed to the protocol treasury.
         """
         cid = str(claim_id).strip()
         if cid not in self.claims:
@@ -521,10 +650,19 @@ Respond in pure JSON:
         if claim_data.get("status") != "ACCEPTED":
             raise gl.vm.UserError("[EXPECTED] Only currently ACCEPTED claims can be challenged")
 
-        original_bond = int(self.claimant_bonds[cid])
-        cbond = int(counter_bond)
+        original_bond = int(self.claimant_bonds.get(cid, 0))
+        attached_cbond = int(gl.message.value)
+        specified_cbond = int(counter_bond)
+        cbond = attached_cbond if attached_cbond > 0 else specified_cbond
+
         if cbond < original_bond:
-            raise gl.vm.UserError(f"[EXPECTED] Counter-bond must be at least the original bond of {original_bond}")
+            raise gl.vm.UserError(f"[EXPECTED] Counter-bond {cbond} must be at least the original bond of {original_bond}")
+
+        if attached_cbond > 0 and specified_cbond > 0 and attached_cbond < specified_cbond:
+            raise gl.vm.UserError(f"[EXPECTED] Attached message value {attached_cbond} is below specified counter-bond {specified_cbond}")
+
+        # Retain counter-bond in custody while challenge consensus executes
+        self.total_bonds_in_custody = u256(int(self.total_bonds_in_custody) + cbond)
 
         challenger = str(gl.message.sender_address)
 
@@ -668,16 +806,39 @@ Respond in pure JSON:
         if verdict == "OVERRIDDEN":
             claim_data["status"] = "OVERRIDDEN"
             self.total_overridden_count = u256(int(self.total_overridden_count) + 1)
-            # Original claimant bond transferred to challenger
-            awarded_bond = original_bond
+
+            # Original claimant bond + counter-bond awarded and paid out to challenger
+            challenger_payout = cbond + original_bond
             self.claimant_bonds[cid] = u256(0)
-            challenge_entry["bond_awarded_to_challenger"] = awarded_bond
-            outcome_msg = f"Challenge succeeded. Claim overridden. Bond of {awarded_bond} transferred to challenger."
+
+            if int(self.total_bonds_in_custody) >= challenger_payout:
+                self.total_bonds_in_custody = u256(int(self.total_bonds_in_custody) - challenger_payout)
+            else:
+                self.total_bonds_in_custody = u256(0)
+
+            self.total_challenger_payouts = u256(int(self.total_challenger_payouts) + challenger_payout)
+
+            challenge_entry["bond_awarded_to_challenger"] = original_bond
+            challenge_entry["counter_bond_refunded"] = cbond
+            challenge_entry["total_payout_to_challenger"] = challenger_payout
+            outcome_msg = f"Challenge succeeded. Claim overridden. Challenger payout of {challenger_payout} ({original_bond} bond + {cbond} counter-bond) disbursed."
+
+            # Actual on-chain payment to challenger!
+            self._pay(Address(challenger), u256(challenger_payout))
         else:
-            # Challenger slashed
+            # Challenge rejected, claim upheld. Challenger's counter-bond is slashed!
             self.total_slashed_bonds = u256(int(self.total_slashed_bonds) + cbond)
+            if int(self.total_bonds_in_custody) >= cbond:
+                self.total_bonds_in_custody = u256(int(self.total_bonds_in_custody) - cbond)
+            else:
+                self.total_bonds_in_custody = u256(0)
+
             challenge_entry["bond_awarded_to_challenger"] = 0
+            challenge_entry["counter_bond_slashed"] = cbond
             outcome_msg = f"Challenge rejected. Claim upheld. Counter-bond of {cbond} slashed."
+
+            # Actual on-chain slashing: send slashed counter-bond to treasury
+            self._pay(self.treasury, u256(cbond))
 
         claim_data["latest_challenge_verdict"] = verdict
         updated_str = json.dumps(claim_data, sort_keys=True)

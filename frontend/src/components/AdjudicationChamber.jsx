@@ -17,6 +17,7 @@ import {
   Swords,
   ChevronDown,
   ChevronUp,
+  ArrowDownToLine,
 } from "lucide-react";
 
 export function AdjudicationChamber({
@@ -26,8 +27,34 @@ export function AdjudicationChamber({
   onOpenChallengeModal,
   selectedCategory,
   onSelectCategory,
+  onRefreshLedger,
 }) {
   const [expandedClaimId, setExpandedClaimId] = useState(null);
+  const [refundingId, setRefundingId] = useState(null);
+  const [refundNotice, setRefundNotice] = useState("");
+
+  const handleRefundBond = async (claimId) => {
+    setRefundingId(claimId);
+    try {
+      const res = await fetch(`/api/claims/${claimId}/refund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRefundNotice(`Refund broadcast: ${data.txHash?.slice(0, 10)}...`);
+        setTimeout(() => setRefundNotice(""), 4000);
+        if (onRefreshLedger) onRefreshLedger();
+      } else {
+        alert(data.error || "Failed to process bond refund");
+      }
+    } catch (err) {
+      console.error("Bond refund error:", err);
+    } finally {
+      setRefundingId(null);
+    }
+  };
 
   const categories = [
     { id: "all", label: "All Records" },
@@ -197,15 +224,32 @@ export function AdjudicationChamber({
                       </div>
                     </div>
 
-                    {/* Challenge Action Button */}
+                    {/* Action Buttons for Accepted Claims */}
                     {isAccepted && (
-                      <button
-                        onClick={() => onOpenChallengeModal(c)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 hover:border-amber-500/60 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 text-xs font-mono font-semibold transition-colors shrink-0"
-                      >
-                        <Swords className="w-3.5 h-3.5" />
-                        <span>Challenge Claim</span>
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleRefundBond(c.claim_id || c.id)}
+                          disabled={refundingId === (c.claim_id || c.id) || c.bond_refunded}
+                          title="Reclaim locked bond for verified claim"
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-emerald-500/30 hover:border-emerald-500/60 bg-emerald-500/10 text-emerald-900 hover:bg-emerald-500/20 text-xs font-mono font-semibold transition-colors disabled:opacity-50 shrink-0"
+                        >
+                          <ArrowDownToLine className="w-3.5 h-3.5 text-emerald" />
+                          <span>
+                            {c.bond_refunded
+                              ? "Bond Refunded"
+                              : refundingId === (c.claim_id || c.id)
+                              ? "Refunding..."
+                              : "Refund Bond"}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => onOpenChallengeModal(c)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 hover:border-amber-500/60 bg-amber-500/10 text-amber-800 hover:bg-amber-500/20 text-xs font-mono font-semibold transition-colors shrink-0"
+                        >
+                          <Swords className="w-3.5 h-3.5" />
+                          <span>Challenge Claim</span>
+                        </button>
+                      </div>
                     )}
                   </div>
 
